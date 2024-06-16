@@ -373,7 +373,8 @@ namespace $projectName.Dtos
             public static bool VerifyPassword(string password, string hash)
             {
                 string inputHash = EncryptPassword(password);
-                return inputHash.Equals(hash, StringComparison.OrdinalIgnoreCase);
+                string hashEncrypt=EncryptPassword(hash);
+                return inputHash.Equals(hashEncrypt, StringComparison.OrdinalIgnoreCase);
             }
         }
     }
