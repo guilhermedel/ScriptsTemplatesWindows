@@ -15,7 +15,7 @@ $env:Path += ";C:\caminho\para\seu\script"
 1. No `PowerShell` como administrador, permita a execução de scripts:
 
 ```powershell
-Set-ExecutionPolicy RemoteSigned
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
 ## Utilização
