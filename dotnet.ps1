@@ -11,14 +11,60 @@ if (-not $projectName) {
     exit 1
 }
 
+$scriptDirectory = $PSScriptRoot
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 # Executa o comando para criar o projeto Web API
 Write-Host "Criando projeto Web API com o nome: $projectName"
 dotnet new webapi -n $projectName
+# function Start-PostgresContainer {
+#     param (
+#         [string]$containerName = "postgres-container",
+#         [string]$postgresUser = "postgres",
+#         [string]$postgresPassword = "postgres",
+#         [string]$postgresPort = "5432"
+#     )
 
+#     $containerExists = docker ps -a --format "{{.Names}}" | Select-String -Pattern $containerName
+#     if ($containerExists) {
+#         Write-Host "O contêiner '$containerName' já existe. Iniciando o contêiner..."
+#         docker start $containerName
+#     } else {
+#         Write-Host "Criando e iniciando o contêiner PostgreSQL..."
+#         docker run --name $containerName -e POSTGRES_USER=$postgresUser -e POSTGRES_PASSWORD=$postgresPassword -p $postgresPort:5432 -d postgres
+#     }
+# }
+
+# Start-PostgresContainer -containerName "postgres-container" -postgresUser "postgres" -postgresPassword "postgres" -postgresPort "5432"
 
 # Verifica se o comando foi executado com sucesso
 if ($LASTEXITCODE -eq 0) {
+    # Criar arquivo docker-compose.yml
+    $dockerComposeContent = @"
+version: '3.8'
 
+services:
+  postgres:
+    image: postgres:latest
+    container_name: postgres-container
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+"@
+
+    $dockerComposeFilePath = "$projectName\docker-compose.yml"
+    Set-Content -Path $dockerComposeFilePath -Value $dockerComposeContent
+
+    # Executar o Docker Compose para criar e iniciar o serviço PostgreSQL
+    docker-compose -f $dockerComposeFilePath up -d
+
+    Write-Host "O serviço PostgreSQL foi iniciado com sucesso."
     Write-Host "Projeto criado com sucesso!"
 
     # Define o caminho do diretório do projeto
@@ -611,9 +657,6 @@ namespace $projectName.Dtos
     }
 
 }
-
-
-
 
 else {
     Write-Host "Erro ao criar o projeto."
