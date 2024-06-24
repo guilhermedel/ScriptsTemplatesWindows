@@ -40,11 +40,9 @@ dotnet new webapi -n $projectName
 if ($LASTEXITCODE -eq 0) {
     # Criar arquivo docker-compose.yml
     $dockerComposeContent = @"
-version: '3.8'
-
 services:
   postgres:
-    image: postgres:latest
+    image: bitnami/postgresql:latest
     container_name: postgres-container
     environment:
       POSTGRES_USER: postgres
@@ -52,17 +50,17 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - db_pg_data:/bitnami/postgresql
 
 volumes:
-  postgres_data:
+  db_pg_data:
 "@
 
     $dockerComposeFilePath = "$projectName\docker-compose.yml"
     Set-Content -Path $dockerComposeFilePath -Value $dockerComposeContent
 
     # Executar o Docker Compose para criar e iniciar o serviço PostgreSQL
-    docker-compose -f $dockerComposeFilePath up -d
+    docker-compose -f up -d
 
     Write-Host "O serviço PostgreSQL foi iniciado com sucesso."
     Write-Host "Projeto criado com sucesso!"
