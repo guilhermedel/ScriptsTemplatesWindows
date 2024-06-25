@@ -56,32 +56,40 @@ def create_directories(project_name, directories):
         print(f"Ocorreu um erro ao criar as pastas: {e}")
         sys.exit(1)
         
-def install_ef_core_package(project_name, database):
-    package_mapping = {
+def add_project_dependencies(project_name, database):
+    os.chdir(project_name)
+
+    dependencies = [
+        'Microsoft.EntityFrameworkCore',
+        'Microsoft.EntityFrameworkCore.Design',
+        'Microsoft.EntityFrameworkCore.Tools',
+        'Microsoft.AspNetCore.Authentication.JwtBearer',
+        'Swashbuckle.AspNetCore'
+    ]
+
+    db_dependencies = {
         'sqlserver': 'Microsoft.EntityFrameworkCore.SqlServer',
         'mysql': 'Pomelo.EntityFrameworkCore.MySql',
         'postgresql': 'Npgsql.EntityFrameworkCore.PostgreSQL',
         'sqlite': 'Microsoft.EntityFrameworkCore.Sqlite'
     }
-    
-    if database not in package_mapping:
+
+    if database in db_dependencies:
+        dependencies.append(db_dependencies[database])
+    else:
         print(f"Banco de dados '{database}' não suportado.")
         sys.exit(1)
-    
-    package_name = package_mapping[database]
-    try:
-        print(f"Instalando o pacote '{package_name}' para o Entity Framework Core...")
-        os.chdir(project_name)
-        return_code = os.system(f'dotnet add package {package_name}')
-        if return_code != 0:
-            print(f"Houve um erro na instalação do pacote '{package_name}'.")
+
+    for dependency in dependencies:
+        try:
+            os.system(f'dotnet add package {dependency}')
+            print(f"Dependência '{dependency}' adicionada com sucesso.")
+        except Exception as e:
+            print(f"Houve um erro ao adicionar a dependência '{dependency}': {e}")
             sys.exit(1)
-        print(f"O pacote '{package_name}' foi instalado com sucesso.")
-    except Exception as e:
-        print(f"Ocorreu um erro ao instalar o pacote '{package_name}': {e}")
-        sys.exit(1)
-    finally:
-        os.chdir('..')
+    os.chdir('..')
+
+
         
 def is_docker_installed():
     try:
@@ -243,7 +251,7 @@ namespace {project_name}.Services
             if (await _context.Users.AnyAsync(u => u.Email == userRegisterDto.Email))
                 return null;
 
-            var newUser = new User
+            User newUser = new User
             {{
                 Cpf = userRegisterDto.Cpf,
                 Name = userRegisterDto.Name,
@@ -290,6 +298,372 @@ namespace {project_name}.Services
         file.write(i_auth_service_content)
     print(f"Arquivo 'IAuthService.cs' criado com sucesso em {i_auth_service_path}")
 
+def create_auth_controller(project_name):
+    controllers_path = os.path.join(project_name, 'Controllers')
+    os.makedirs(controllers_path, exist_ok=True)
+
+    auth_controller_content = f'''
+using Microsoft.AspNetCore.Mvc;
+using {project_name}.Dtos;
+using {project_name}.Services;
+using {project_name}.Utils.Encryption;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace {project_name}.Controllers
+{{
+    [Route("api/auth")]
+    [ApiController]
+    public class AuthController : ControllerBase
+    {{
+        private readonly IAuthService _authService;
+
+        public AuthController(IAuthService authService)
+        {{
+            _authService = authService;
+        }}
+
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] UserLoginDto userLoginDto)
+        {{
+            var token = await _authService.Authenticate(userLoginDto.Email, userLoginDto.Password);
+
+            if (!token)
+                return Unauthorized();
+
+            return Ok(new {{ Token = token }});
+        }}
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] UserRegisterDto userRegisterDto)
+        {{
+            var user = await _authService.Register(userRegisterDto);
+            if (user == null)
+                return BadRequest("Email já registrado!");
+            
+            return Ok(user);
+        }}
+    }}
+}}
+    '''
+
+    auth_controller_path = os.path.join(controllers_path, 'AuthController.cs')
+    with open(auth_controller_path, 'w') as file:
+        file.write(auth_controller_content)
+    print(f"Arquivo 'AuthController.cs' criado com sucesso em {auth_controller_path}")
+    
+def create_user_model(project_name):
+    models_path = os.path.join(project_name, 'Models')
+    os.makedirs(models_path, exist_ok=True)
+
+    user_model_content = f'''
+using System;
+using System.ComponentModel.DataAnnotations;
+
+namespace {project_name}.Models
+{{
+    public class User
+    {{
+        [Key]
+        public Guid Id {{ get; set; }}
+        public string Cpf {{ get; set; }}
+        public string Name {{ get; set; }}
+        public string Email {{ get; set; }}
+        public string Password {{ get; set; }}
+        public string Phone {{ get; set; }}
+        public DateTime BirthdayDate {{ get; set; }}
+        
+        public User()
+        {{
+            
+        }}
+
+        public User(string name, string email, string phone, string cpf,string password,DateTime birthdayDate)
+        {{
+            Id = new Guid();
+            Cpf = cpf;
+            Name = name;
+            Email = email;
+            Password=password;
+            Phone = phone;
+            BirthdayDate = birthdayDate; 
+        }}
+    }}
+}}
+    '''
+
+    user_model_path = os.path.join(models_path, 'User.cs')
+    with open(user_model_path, 'w') as file:
+        file.write(user_model_content)
+    print(f"Arquivo 'User.cs' criado com sucesso em {user_model_path}")
+
+def create_user_login_dto(project_name):
+    dtos_path = os.path.join(project_name, 'Dtos')
+    os.makedirs(dtos_path, exist_ok=True)
+
+    user_login_dto_content = f'''
+namespace {project_name}.Dtos
+{{
+    public class UserLoginDto
+    {{
+        public string Email {{ get; set; }}
+        public string Password {{ get; set; }}
+    }}
+}}
+    '''
+
+    user_login_dto_path = os.path.join(dtos_path, 'UserLoginDto.cs')
+    with open(user_login_dto_path, 'w') as file:
+        file.write(user_login_dto_content)
+    print(f"Arquivo 'UserLoginDto.cs' criado com sucesso em {user_login_dto_path}")
+
+def create_user_register_dto(project_name):
+    dtos_path = os.path.join(project_name, 'Dtos')
+    os.makedirs(dtos_path, exist_ok=True)
+
+    user_register_dto_content = f'''
+using System;
+
+namespace {project_name}.Dtos
+{{
+    public class UserRegisterDto
+    {{
+        public string Cpf {{ get; set; }}
+        public string Name {{ get; set; }}
+        public string Email {{ get; set; }}
+        public string Password {{ get; set; }}
+        public string Phone {{ get; set; }}
+        public DateTime BirthdayDate {{ get; set; }}
+    }}
+}}
+    '''
+
+    user_register_dto_path = os.path.join(dtos_path, 'UserRegisterDto.cs')
+    with open(user_register_dto_path, 'w') as file:
+        file.write(user_register_dto_content)
+    print(f"Arquivo 'UserRegisterDto.cs' criado com sucesso em {user_register_dto_path}")
+
+def create_application_db_context(project_name):
+    data_path = os.path.join(project_name, 'Data')
+    os.makedirs(data_path, exist_ok=True)
+
+    application_db_context_content = f'''
+using Microsoft.EntityFrameworkCore;
+using {project_name}.Models;
+
+namespace {project_name}.Data
+{{
+    public class ApplicationDbContext : DbContext
+    {{
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
+        {{
+        }}
+
+        public DbSet<User> Users {{ get; set; }}
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {{
+            base.OnModelCreating(modelBuilder);
+
+            // Configurações adicionais de modelos
+        }}
+    }}
+}}
+    '''
+
+    application_db_context_path = os.path.join(data_path, 'ApplicationDbContext.cs')
+    with open(application_db_context_path, 'w') as file:
+        file.write(application_db_context_content)
+    print(f"Arquivo 'ApplicationDbContext.cs' criado com sucesso em {application_db_context_path}")
+
+def create_encryption_service(project_name):
+    utils_path = os.path.join(project_name, 'Utils')
+    os.makedirs(utils_path, exist_ok=True)
+
+    encryption_service_content = f'''
+using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.IdentityModel.Tokens;
+
+namespace {project_name}.Utils.Encryption
+{{
+    public static class EncryptionService
+    {{
+        public static string GenerateToken(string email)
+        {{
+            var builder = WebApplication.CreateBuilder();
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(builder.Configuration["Jwt:Key"]);
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {{
+                Subject = new ClaimsIdentity(new Claim[] {{ new Claim(ClaimTypes.Name, email) }}),
+                Expires = DateTime.UtcNow.AddDays(1),
+                SigningCredentials = new SigningCredentials(
+                    new SymmetricSecurityKey(key),
+                    SecurityAlgorithms.HmacSha256
+                )
+            }};
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
+        }}
+
+        public static string EncryptPassword(string password)
+        {{
+            using (SHA256 sha256Hash = SHA256.Create())
+            {{
+                byte[] bytes = sha256Hash.ComputeHash(Encoding.UTF8.GetBytes(password));
+                // Convert byte array to a string representation
+                StringBuilder builder = new();
+                for (int i = 0; i < bytes.Length; i++)
+                {{
+                    builder.Append(bytes[i].ToString("x2"));
+                }}
+                return builder.ToString();
+            }}
+        }}
+
+        public static bool VerifyPassword(string password, string hash)
+        {{
+            string inputHash = EncryptPassword(password);
+            return inputHash.Equals(hash, StringComparison.OrdinalIgnoreCase);
+        }}
+    }}
+}}
+    '''
+
+    encryption_service_path = os.path.join(utils_path, 'EncryptionService.cs')
+    with open(encryption_service_path, 'w') as file:
+        file.write(encryption_service_content)
+    print(f"Arquivo 'EncryptionService.cs' criado com sucesso em {encryption_service_path}")
+
+def create_appsettings_json(project_name,dbUser,dbPassword,dbName):
+    appsettings_content = f'''
+{{
+  "ConnectionStrings": {{
+    "DefaultConnection": "Host=localhost;Port=5432;Database={dbName};Username={dbUser};Password={dbPassword};"
+  }},
+  "Jwt": {{
+    "Key": "s4l0nK3yf0r3ncryptTh3s3P4ss0w0rdN33dM0r3Ch4r4ct3rs"
+  }},
+  "Logging": {{
+    "LogLevel": {{
+      "Default": "Information",
+      "Microsoft": "Warning",
+      "Microsoft.Hosting.Lifetime": "Information"
+    }}
+  }},
+  "AllowedHosts": "*"
+}}
+    '''
+
+    appsettings_path = os.path.join(project_name, 'appsettings.json')
+    with open(appsettings_path, 'w') as file:
+        file.write(appsettings_content)
+    print(f"Arquivo 'appsettings.json' criado com sucesso em {appsettings_path}")
+
+def create_program_cs(project_name, database):
+    db_options = {
+        'sqlserver': 'UseSqlServer',
+        'mysql': 'UseMySql',
+        'postgresql': 'UseNpgsql',
+        'sqlite': 'UseSqlite'
+    }
+
+    if database not in db_options:
+        print(f"Banco de dados '{database}' não suportado.")
+        sys.exit(1)
+
+    db_option = db_options[database]
+
+    program_content = f'''
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using {project_name}.Data;
+using {project_name}.Services;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.{db_option}(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var key = Encoding.ASCII.GetBytes(builder.Configuration["Jwt:Key"]);
+
+// Configurar JWT
+builder.Services.AddAuthentication(options =>
+{{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+}})
+.AddJwtBearer(options =>
+{{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {{
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ValidateIssuer = false,
+        ValidateAudience = false
+    }};
+}});
+
+builder.Services.AddScoped<IAuthService, AuthService>();
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{{
+    app.UseDeveloperExceptionPage();
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}}
+
+app.UseHttpsRedirection();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.Run();
+    '''
+
+    program_path = os.path.join(project_name, 'Program.cs')
+    with open(program_path, 'w') as file:
+        file.write(program_content)
+    print(f"Arquivo 'Program.cs' criado com sucesso em {program_path}")
+
+def create_docker_compose_file(project_name, database, db_user, db_password, db_name):
+    compose_content = f'''
+services:
+  postgres:
+    image: bitnami/postgresql:latest
+    ports:
+      - '5432:5432'
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=teste
+    volumes:
+      - db_pg_data:/bitnami/postgresql
+volumes:
+  db_pg_data:
+    '''
+
+    compose_file_path = os.path.join(project_name, 'docker-compose.yml')
+    with open(compose_file_path, 'w') as file:
+        file.write(compose_content)
+    print(f"Arquivo 'docker-compose.yml' criado com sucesso em {compose_file_path}")
+
 
 
 
@@ -301,6 +675,7 @@ if __name__ == "__main__":
     parser.add_argument('--dbUser', type=str, required=True, help='Usuário do banco de dados')
     parser.add_argument('--dbPassword', type=str, required=True, help='Senha do banco de dados')
     parser.add_argument('--dbName', type=str, required=True, help='Senha do banco de dados')
+    parser.add_argument('--dbHost', type=str, default='postgres_container', help='Senha do banco de dados')
     
     args = parser.parse_args()
     if not is_dotnet_installed():
@@ -314,11 +689,21 @@ if __name__ == "__main__":
     # Criação dos arquivos
     create_auth_service(args.projectName)
     create_i_auth_service(args.projectName)
-    
+    create_auth_controller(args.projectName)
+    create_user_model(args.projectName)
+    create_user_login_dto(args.projectName)
+    create_user_register_dto(args.projectName)
+    create_application_db_context(args.projectName)
+    create_encryption_service(args.projectName)
+    create_appsettings_json(args.projectName,args.dbUser,args.dbPassword,args.dbName)
+    create_program_cs(args.projectName, args.database)
     # ------------------------------------------------------
-    install_ef_core_package(args.projectName, args.database)
+    
+    add_project_dependencies(args.projectName, args.database)
     is_docker_installed()
-    create_docker_compose_file(args.projectName, args.database, args.dbUser, args.dbPassword,args.dbName)
+
+    # Criar Docker Compose e Dockerfile
+    create_docker_compose_file(args.projectName, args.database, args.dbUser, args.dbPassword, args.dbName)
     start_docker_compose(args.projectName)
     
     
