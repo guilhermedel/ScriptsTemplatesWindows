@@ -52,6 +52,7 @@ def create_directories(project_name, directories):
         for directory in directories:
             os.makedirs(os.path.join(base_path, directory), exist_ok=True)
         print(f"As pastas {', '.join(directories)} foram criadas dentro de '{project_name}'.")
+        
     except Exception as e:
         print(f"Ocorreu um erro ao criar as pastas: {e}")
         sys.exit(1)
@@ -105,7 +106,6 @@ def is_docker_installed():
 def create_docker_compose_file(project_name, database, db_user, db_password, db_name):
     content_mapping = {
         'sqlserver': f'''
-version: '3.8'
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2019-latest
@@ -122,7 +122,6 @@ volumes:
   sqlserver_data:
         ''',
         'mysql': f'''
-version: '3.8'
 services:
   mysql:
     image: mysql:latest
@@ -141,7 +140,6 @@ volumes:
   mysql_data:
         ''',
         'postgresql': f'''
-version: '3.8'
 services:
   postgres:
     image: postgres:latest
@@ -159,7 +157,6 @@ volumes:
   postgres_data:
         ''',
         'sqlite': f'''
-version: '3.8'
 services:
   sqlite:
     image: nouchka/sqlite3
@@ -192,16 +189,19 @@ volumes:
 
 def start_docker_compose(project_name):
     try:
+        os.system('start "C:\Program Files\Docker\Docker\Docker Desktop.exe"')
         os.chdir(project_name)
         return_code = os.system('docker-compose up -d')
         if return_code != 0:
             print("Houve um erro ao iniciar o Docker Compose.")
             sys.exit(1)
+        os.system('dotnet ef migrations add "initialMigration"')
+        os.system('dotnet ef database update')
         print("Docker Compose iniciado com sucesso.")
     except Exception as e:
         print(f"Ocorreu um erro ao iniciar o Docker Compose: {e}")
         sys.exit(1)
-    finally:
+    finally:        
         os.chdir('..')
         
 def create_auth_service(project_name):
@@ -324,13 +324,25 @@ namespace {project_name}.Controllers
             _authService = authService;
         }}
 
-        [HttpPost("login")]
-        public async Task<IActionResult> Login([FromBody] UserLoginDto userLoginDto)
+        [HttpGet("login")]
+        public async Task<IActionResult> Login()
         {{
-            var token = await _authService.Authenticate(userLoginDto.Email, userLoginDto.Password);
+            var authHeader = AuthenticationHeaderValue.Parse(Request.Headers["Authorization"]);
+            if (authHeader.Scheme is not "Basic")
+                return Unauthorized("ASDasD");
 
-            if (!token)
-                return Unauthorized();
+            var credentials = Encoding.ASCII.GetString(
+                Convert.FromBase64String(authHeader.Parameter)
+            );
+            var separatorIndex = credentials.IndexOf(':');
+            string email = credentials.Substring(0, separatorIndex);
+            string password = credentials.Substring(separatorIndex + 1);
+            bool isLoginValid = await _authService.Authenticate(email, password);
+
+            if (!isLoginValid)
+                return NotFound("Login inválido.");
+                
+            string token = EncryptionService.GenerateToken(email);
 
             return Ok(new {{ Token = token }});
         }}
@@ -539,11 +551,24 @@ namespace {project_name}.Utils.Encryption
         file.write(encryption_service_content)
     print(f"Arquivo 'EncryptionService.cs' criado com sucesso em {encryption_service_path}")
 
-def create_appsettings_json(project_name,dbUser,dbPassword,dbName):
+def create_appsettings_json(project_name, database, db_user, db_password, db_name):
+    connection_strings = {
+        'sqlserver': f"Server=localhost;Database={db_name};User Id={db_user};Password={db_password};",
+        'mysql': f"Server=localhost;Port=3306;Database={db_name};User={db_user};Password={db_password};",
+        'postgresql': f"Host=localhost;Port=5432;Database={db_name};Username={db_user};Password={db_password};",
+        'sqlite': f"Data Source={db_name}.db;"
+    }
+
+    if database not in connection_strings:
+        print(f"Banco de dados '{database}' não suportado.")
+        sys.exit(1)
+
+    connection_string = connection_strings[database]
+
     appsettings_content = f'''
 {{
   "ConnectionStrings": {{
-    "DefaultConnection": "Host=localhost;Port=5432;Database={dbName};Username={dbUser};Password={dbPassword};"
+    "DefaultConnection": "{connection_string}"
   }},
   "Jwt": {{
     "Key": "s4l0nK3yf0r3ncryptTh3s3P4ss0w0rdN33dM0r3Ch4r4ct3rs"
@@ -642,27 +667,27 @@ app.Run();
         file.write(program_content)
     print(f"Arquivo 'Program.cs' criado com sucesso em {program_path}")
 
-def create_docker_compose_file(project_name, database, db_user, db_password, db_name):
-    compose_content = f'''
-services:
-  postgres:
-    image: bitnami/postgresql:latest
-    ports:
-      - '5432:5432'
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=teste
-    volumes:
-      - db_pg_data:/bitnami/postgresql
-volumes:
-  db_pg_data:
-    '''
+# def create_docker_compose_file(project_name, database, db_user, db_password, db_name):
+#     compose_content = f'''
+# services:
+#   postgres:
+#     image: bitnami/postgresql:latest
+#     ports:
+#       - '5432:5432'
+#     environment:
+#       - POSTGRES_USER=postgres
+#       - POSTGRES_PASSWORD=postgres
+#       - POSTGRES_DB=teste
+#     volumes:
+#       - db_pg_data:/bitnami/postgresql
+# volumes:
+#   db_pg_data:
+#     '''
 
-    compose_file_path = os.path.join(project_name, 'docker-compose.yml')
-    with open(compose_file_path, 'w') as file:
-        file.write(compose_content)
-    print(f"Arquivo 'docker-compose.yml' criado com sucesso em {compose_file_path}")
+#     compose_file_path = os.path.join(project_name, 'docker-compose.yml')
+#     with open(compose_file_path, 'w') as file:
+#         file.write(compose_content)
+#     print(f"Arquivo 'docker-compose.yml' criado com sucesso em {compose_file_path}")
 
 
 
@@ -675,7 +700,6 @@ if __name__ == "__main__":
     parser.add_argument('--dbUser', type=str, required=True, help='Usuário do banco de dados')
     parser.add_argument('--dbPassword', type=str, required=True, help='Senha do banco de dados')
     parser.add_argument('--dbName', type=str, required=True, help='Senha do banco de dados')
-    parser.add_argument('--dbHost', type=str, default='postgres_container', help='Senha do banco de dados')
     
     args = parser.parse_args()
     if not is_dotnet_installed():
@@ -695,7 +719,7 @@ if __name__ == "__main__":
     create_user_register_dto(args.projectName)
     create_application_db_context(args.projectName)
     create_encryption_service(args.projectName)
-    create_appsettings_json(args.projectName,args.dbUser,args.dbPassword,args.dbName)
+    create_appsettings_json(args.projectName, args.database, args.dbUser, args.dbPassword, args.dbName)
     create_program_cs(args.projectName, args.database)
     # ------------------------------------------------------
     
